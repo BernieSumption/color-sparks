@@ -1,0 +1,31 @@
+{
+  "name": "color-sparks",
+  "version": "1.0.0",
+  "description": "A fun little experiment with HTML canvas",
+  "main": "public/color-sparks.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BernieSumption/color-sparks.git"
+  },
+  "keywords": [
+    "HTML",
+    "canvas",
+    "color",
+    "sparks"
+  ],
+  "author": "Bernie Sumption",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/BernieSumption/color-sparks/issues"
+  },
+  "homepage": "https://github.com/BernieSumption/color-sparks",
+  "devDependencies": {
+    "auto-reload-brunch": ">= 1.0 < 1.8",
+    "coffee-script-brunch": "^1.8.1",
+    "jaded-brunch": "^1.7.11",
+    "javascript-brunch": ">= 1.0 < 1.8"
+  }
+}
