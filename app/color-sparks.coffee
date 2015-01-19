@@ -13,11 +13,10 @@ class Range
 RADIUS_DECAY = new Range(0.95, 0.99)
 MAX_INITIAL_V = 1
 INITIAL_DIAMETER = new Range(5, 20)
-FORCE_AMPLITUDE = new Range(-0.05, 0.05)
+FORCE_AMPLITUDE = new Range(-0.2, 0.2)
 FORCE_PERIOD = new Range(10, 50)
 GREY_VALUE = new Range(0, 128)
 TRANSPARENCY = 0.1
-SPARKS_PER_SECOND = 250
 SPARK_FRAMES_PER_SECOND = 10
 BG_RELEASE_PROBABILITY = 0.3
 DARKENING_DIAMETER = new Range(3, 7)
@@ -25,25 +24,30 @@ DARKENING_BEGIN_DELAY = 5
 DARKENING_ALPHA = 0.1
 BACKGROUND_COLOR = "#000000"
 
+
+INITIAL_SPARKS_PER_SECOND = 1000
+MAX_SPARKS_PER_SECOND = 2000
+MIN_SPARKS_PER_SECOND = 100
+TARGET_FPS = 50
+SPARKS_PER_SECOND_ADJUST_RATE = 0.001
+
+
 # A canvas onto which dots are drawn
 class ColorSparks
-  constructor: (@canvas, @logPerformance = false) ->
+  constructor: (@canvas, velocityMapUrl, @logPerformance = false) ->
     @ctx = canvas.getContext "2d"
     @reset()
 
+    @frameCount = 0
+    @framesPerSecond = 60
+    @sparksPerSecond = INITIAL_SPARKS_PER_SECOND
+
     window.requestAnimationFrame @draw
 
-    @showFrameRate = true
-    window.addEventListener "keyup", (event) =>
-      if event.keyCode == 70 # f key
-        @showFrameRate = !@showFrameRate
-
-    @canvas.addEventListener "mousedown", @startSparks
+    @canvas.addEventListener "mousedown", @updateSparkPosition
     @canvas.addEventListener "mousemove", @updateSparkPosition
-    @canvas.addEventListener "mouseup", @endSparks
-    @canvas.addEventListener "touchstart", @startSparks
+    @canvas.addEventListener "touchstart", @updateSparkPosition
     @canvas.addEventListener "touchmove", @updateSparkPosition
-    @canvas.addEventListener "touchend", @endSparks
 
   # wipe the canvas and reset the animation state
   reset: ->
@@ -54,52 +58,77 @@ class ColorSparks
     @ctx.closePath()
     @ctx.fillStyle = BACKGROUND_COLOR
     @ctx.fill()
+    @releaseX = @width/2
+    @releaseY = @height/2
     @sparks = []
+    return
 
   # main rendering function executed every frame
   draw: (timestamp) =>
     unless @height == @canvas.offsetHeight and @width == @canvas.offsetWidth
       @reset()
 
-    if @releaseSparksAt
-      for i in [0..10]
-        @sparks.push(
-          new Spark(
-            @releaseSparksAt.clone(),
-            new Point(Math.random()*2-1, Math.random()*2-1),
-            randomColor()))
+    # calculate frames per second, averaging over 10 frames for consistency
+    @frameCount += 1
+    if @frameCount % 10 == 1
+      @framesPerSecond = Math.round(10 / (timestamp - @prevTimestamp) * 1000) || 60 # assume 60 fps on first frame
+      @prevTimestamp = timestamp
+
+    # adjust spark release rate up or down to hit target fps
+    if @framesPerSecond < TARGET_FPS and @sparksPerSecond < MAX_SPARKS_PER_SECOND
+      @sparksPerSecond -= (@sparksPerSecond * SPARKS_PER_SECOND_ADJUST_RATE)
+    else if @framesPerSecond > TARGET_FPS and @sparksPerSecond > MIN_SPARKS_PER_SECOND
+      @sparksPerSecond += (@sparksPerSecond * SPARKS_PER_SECOND_ADJUST_RATE)
+
+    if @logPerformance and @frameCount % 100 == 0
+        console.log "fps=#{@framesPerSecond}, sparks=#{@sparks.length}, releaseRate=#{@sparksPerSecond.toFixed(2)}"
+
+    sparksToRelease = @sparksPerSecond / @framesPerSecond
+    for i in [0..sparksToRelease] by 1
+      spark = new Spark(
+        new Point(@releaseX, @releaseY),
+        new Point(Math.random()*2-1, Math.random()*2-1),
+        randomColor())
+      @sparks.push(spark)
+    @timestampLastFrame = timestamp
 
     i = 0
+    finishedUpTo = -1
     while i < @sparks.length
-      unless @sparks[i].finished
+      if @sparks[i].active
         @sparks[i].update(@ctx)
-      else finishedUpTo = i  if finishedUpTo is i - 1
+      else if finishedUpTo == i - 1
+          finishedUpTo = i
       i++
-    @sparks.splice 0, finishedUpTo + 1  unless finishedUpTo is -1
-
-    if @logPerformance
-      @frameCount = (@frameCount || 0) + 1
-      if Math.floor(timestamp / 1000) != Math.floor(@prevLogTimestamp / 1000)
-        fps = Math.round((@frameCount - @prevFrameCount) / (timestamp - @prevLogTimestamp) * 1000)
-        console.log "fps= #{fps}"
-        @prevLogTimestamp = timestamp
-        @prevFrameCount = @frameCount
+    if finishedUpTo > -1
+      @sparks.splice 0, finishedUpTo + 1
 
     window.requestAnimationFrame @draw
     return
 
 
-  startSparks: (event) =>
-    @releaseSparksAt = new Point()
-    @updateSparkPosition(event)
-
   updateSparkPosition: (event) =>
-    if @releaseSparksAt
-      @releaseSparksAt.x = event.offsetX || event.layerX
-      @releaseSparksAt.y = event.offsetY || event.layerY
+    @releaseX = event.offsetX || event.layerX
+    @releaseY = event.offsetY || event.layerY
 
-  endSparks: (event) =>
-    @releaseSparksAt = null
+
+  calculateReleaseRate: ->
+    milliseconds = 10
+    sparksPerIteration = 100
+    start = getTimer()
+    totalSparks = 0
+    while getTimer() - start < milliseconds
+      for i in [0..sparksPerIteration] by 1
+        spark = new Spark(
+          new Point(50, 50),
+          new Point(Math.random()*2-1, Math.random()*2-1),
+          randomColor())
+        spark.update(@ctx)
+        totalSparks += sparksPerIteration
+    @reset()
+    idealReleaseRate = totalSparks / milliseconds / 60 / 2
+    console.log "ideal release rate = #{idealReleaseRate}"
+    return idealReleaseRate
 
 
 
@@ -113,7 +142,7 @@ class Spark
   constructor: (@location, @velocity, @color) ->
     @initialLocation = @location.clone()
     @forceCounter = 0
-    @finished = false
+    @active = true
 
     @radius = INITIAL_DIAMETER.get() / 2
     @radiusDecay = RADIUS_DECAY.get()
@@ -138,17 +167,53 @@ class Spark
       ctx.closePath()
       ctx.fillStyle = "rgba(0, 0, 0, " + DARKENING_ALPHA + ")"
       ctx.fill()
-    @finished = true  if @radius < 1
+    if @radius < 1
+      @active = false
     @location.x += @velocity.x
     @location.y += @velocity.y
     @radius *= @radiusDecay
     return
 
 
+# A class for reading pixel data from an image
+class VelocityMap
+  constructor: (src) ->
+    @image = new Image()
+    @image.onload = @handleImageLoad
+    @loaded = false
+
+  handleImageLoad: =>
+    imgCanvas = document.createElement("canvas")
+    imgCanvas.width = imgWidth = @image.width
+    imgCanvas.height = imgHeight = @image.height
+    imgCtx = imgCanvas.getContext("2d")
+    imgCtx.drawImage image, 0, 0
+    @imageData = imgCtx.getImageData(x, y, imgCanvas.width, imgCanvas.height)
+    @width = imgCanvas.width
+
+  velocityAt: (x, y) ->
+    offset = y * @width + x
+    return new Point(
+      (@imageData[offset] / 128 - 1) * MAX_INITIAL_V
+      (@imageData[offset+1] / 128 - 1) * MAX_INITIAL_V)
+
+  isTextAt: (x, y) ->
+    offset = y * @width + x
+    return @imageData[offset+2] > 128
+
+
 # Generate a random number between from and to
 random = (from, to) ->
   from + (Math.random() * (to - from))
 
+# Function to get millisecond-accurate epoch timer, more efficient in
+# browsres that support Date.now()
+
+if Date.now
+  getTimer = Date.now
+else
+  getTimer = ->
+    new Date().getTime()
 
 # Create a random fully saturated color. Colors are fully
 # saturated if they have one RGB value at 255, one at 0, and
