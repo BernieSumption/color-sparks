@@ -54,7 +54,7 @@
   connect();
 })();
 
-var BACKGROUND_COLOR, BG_RELEASE_PROBABILITY, ColorSparks, DARKENING_ALPHA, DARKENING_BEGIN_DELAY, DARKENING_DIAMETER, FORCE_AMPLITUDE, FORCE_PERIOD, GREY_VALUE, INITIAL_DIAMETER, INITIAL_SPARKS_PER_SECOND, MAX_INITIAL_V, MAX_SPARKS_PER_SECOND, MIN_SPARKS_PER_SECOND, Point, RADIUS_DECAY, Range, SPARKS_PER_SECOND_ADJUST_RATE, SPARK_FRAMES_PER_SECOND, Spark, TARGET_FPS, TRANSPARENCY, VelocityMap, getTimer, random, randomColor, randomGrey,
+var BACKGROUND_COLOR, BG_RELEASE_PROBABILITY, ColorSparks, DARKENING_ALPHA, DARKENING_DIAMETER, FORCE_AMPLITUDE, FORCE_PERIOD, GREY_VALUE, INITIAL_DIAMETER, INITIAL_SPARKS_PER_SECOND, MAX_INITIAL_V, MAX_SPARKS_PER_SECOND, MIN_SPARKS_PER_SECOND, Point, RADIUS_DECAY, Range, SPARKS_PER_SECOND_ADJUST_RATE, SPARK_RELEASE_POWER, SPARK_RELEASE_RADIUS, Spark, TARGET_FPS, TRANSPARENCY, VelocityMap, getTimer, random, randomColor, randomGrey,
   __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
 Range = (function() {
@@ -75,7 +75,7 @@ RADIUS_DECAY = new Range(0.95, 0.99);
 
 MAX_INITIAL_V = 1;
 
-INITIAL_DIAMETER = new Range(5, 20);
+INITIAL_DIAMETER = new Range(.005, .015);
 
 FORCE_AMPLITUDE = new Range(-0.2, 0.2);
 
@@ -85,27 +85,27 @@ GREY_VALUE = new Range(0, 128);
 
 TRANSPARENCY = 0.1;
 
-SPARK_FRAMES_PER_SECOND = 10;
-
 BG_RELEASE_PROBABILITY = 0.3;
-
-DARKENING_DIAMETER = new Range(3, 7);
-
-DARKENING_BEGIN_DELAY = 5;
-
-DARKENING_ALPHA = 0.1;
 
 BACKGROUND_COLOR = "#000000";
 
-INITIAL_SPARKS_PER_SECOND = 1000;
+SPARK_RELEASE_RADIUS = 0.1;
 
-MAX_SPARKS_PER_SECOND = 2000;
+SPARK_RELEASE_POWER = 2;
+
+DARKENING_DIAMETER = new Range(0.002, 0.01);
+
+DARKENING_ALPHA = 0.1;
+
+INITIAL_SPARKS_PER_SECOND = 500;
+
+MAX_SPARKS_PER_SECOND = 1500;
 
 MIN_SPARKS_PER_SECOND = 100;
 
-TARGET_FPS = 50;
+TARGET_FPS = 30;
 
-SPARKS_PER_SECOND_ADJUST_RATE = 0.001;
+SPARKS_PER_SECOND_ADJUST_RATE = 0.05;
 
 ColorSparks = (function() {
   function ColorSparks(canvas, velocityMapUrl, logPerformance) {
@@ -114,15 +114,16 @@ ColorSparks = (function() {
     this.updateSparkPosition = __bind(this.updateSparkPosition, this);
     this.draw = __bind(this.draw, this);
     this.ctx = canvas.getContext("2d");
-    this.reset();
+    this.velocityMap = new VelocityMap(velocityMapUrl);
     this.frameCount = 0;
     this.framesPerSecond = 60;
     this.sparksPerSecond = INITIAL_SPARKS_PER_SECOND;
-    window.requestAnimationFrame(this.draw);
     this.canvas.addEventListener("mousedown", this.updateSparkPosition);
     this.canvas.addEventListener("mousemove", this.updateSparkPosition);
     this.canvas.addEventListener("touchstart", this.updateSparkPosition);
     this.canvas.addEventListener("touchmove", this.updateSparkPosition);
+    this.reset();
+    window.requestAnimationFrame(this.draw);
   }
 
   ColorSparks.prototype.reset = function() {
@@ -139,67 +140,64 @@ ColorSparks = (function() {
   };
 
   ColorSparks.prototype.draw = function(timestamp) {
-    var finishedUpTo, i, spark, sparksToRelease, _i;
+    var finishedUpTo, i, sparksToRelease, _i;
     if (!(this.height === this.canvas.offsetHeight && this.width === this.canvas.offsetWidth)) {
       this.reset();
     }
-    this.frameCount += 1;
-    if (this.frameCount % 10 === 1) {
-      this.framesPerSecond = Math.round(10 / (timestamp - this.prevTimestamp) * 1000) || 60;
-      this.prevTimestamp = timestamp;
-    }
-    if (this.framesPerSecond < TARGET_FPS && this.sparksPerSecond < MAX_SPARKS_PER_SECOND) {
-      this.sparksPerSecond -= this.sparksPerSecond * SPARKS_PER_SECOND_ADJUST_RATE;
-    } else if (this.framesPerSecond > TARGET_FPS && this.sparksPerSecond > MIN_SPARKS_PER_SECOND) {
-      this.sparksPerSecond += this.sparksPerSecond * SPARKS_PER_SECOND_ADJUST_RATE;
-    }
-    if (this.logPerformance && this.frameCount % 100 === 0) {
-      console.log("fps=" + this.framesPerSecond + ", sparks=" + this.sparks.length + ", releaseRate=" + (this.sparksPerSecond.toFixed(2)));
-    }
-    sparksToRelease = this.sparksPerSecond / this.framesPerSecond;
-    for (i = _i = 0; _i <= sparksToRelease; i = _i += 1) {
-      spark = new Spark(new Point(this.releaseX, this.releaseY), new Point(Math.random() * 2 - 1, Math.random() * 2 - 1), randomColor());
-      this.sparks.push(spark);
-    }
-    this.timestampLastFrame = timestamp;
-    i = 0;
-    finishedUpTo = -1;
-    while (i < this.sparks.length) {
-      if (this.sparks[i].active) {
-        this.sparks[i].update(this.ctx);
-      } else if (finishedUpTo === i - 1) {
-        finishedUpTo = i;
+    if (this.velocityMap.loaded) {
+      this.frameCount += 1;
+      if (this.frameCount % 10 === 1) {
+        this.framesPerSecond = Math.round(10 / (timestamp - this.prevTimestamp) * 1000) || 60;
+        this.prevTimestamp = timestamp;
       }
-      i++;
-    }
-    if (finishedUpTo > -1) {
-      this.sparks.splice(0, finishedUpTo + 1);
+      if (this.framesPerSecond < TARGET_FPS && this.sparksPerSecond > MIN_SPARKS_PER_SECOND) {
+        this.sparksPerSecond -= this.sparksPerSecond * SPARKS_PER_SECOND_ADJUST_RATE;
+      } else if (this.framesPerSecond > TARGET_FPS && this.sparksPerSecond < MAX_SPARKS_PER_SECOND) {
+        this.sparksPerSecond += this.sparksPerSecond * SPARKS_PER_SECOND_ADJUST_RATE;
+      }
+      if (this.logPerformance && this.frameCount % 10 === 0) {
+        console.log("fps=" + this.framesPerSecond + ", sparks=" + this.sparks.length + ", releaseRate=" + (this.sparksPerSecond.toFixed(2)));
+      }
+      sparksToRelease = this.sparksPerSecond / this.framesPerSecond;
+      for (i = _i = 0; _i <= sparksToRelease; i = _i += 1) {
+        this.releaseSpark(this.releaseX, this.releaseY);
+      }
+      this.timestampLastFrame = timestamp;
+      i = 0;
+      finishedUpTo = -1;
+      while (i < this.sparks.length) {
+        if (this.sparks[i].active) {
+          this.sparks[i].update(this.ctx);
+        } else if (finishedUpTo === i - 1) {
+          finishedUpTo = i;
+        }
+        i++;
+      }
+      if (finishedUpTo > -1) {
+        this.sparks.splice(0, finishedUpTo + 1);
+      }
     }
     window.requestAnimationFrame(this.draw);
   };
 
   ColorSparks.prototype.updateSparkPosition = function(event) {
     this.releaseX = event.offsetX || event.layerX;
-    return this.releaseY = event.offsetY || event.layerY;
+    this.releaseY = event.offsetY || event.layerY;
+    return event.preventDefault();
   };
 
-  ColorSparks.prototype.calculateReleaseRate = function() {
-    var i, idealReleaseRate, milliseconds, spark, sparksPerIteration, start, totalSparks, _i;
-    milliseconds = 10;
-    sparksPerIteration = 100;
-    start = getTimer();
-    totalSparks = 0;
-    while (getTimer() - start < milliseconds) {
-      for (i = _i = 0; _i <= sparksPerIteration; i = _i += 1) {
-        spark = new Spark(new Point(50, 50), new Point(Math.random() * 2 - 1, Math.random() * 2 - 1), randomColor());
-        spark.update(this.ctx);
-        totalSparks += sparksPerIteration;
-      }
+  ColorSparks.prototype.releaseSpark = function(centerX, centerY) {
+    var angle, isForeground, offset, spark, velocity, x, y, _ref;
+    offset = Math.pow(Math.random(), SPARK_RELEASE_POWER) * SPARK_RELEASE_RADIUS * this.width;
+    angle = Math.random() * Math.PI * 2;
+    x = centerX + Math.sin(angle) * offset;
+    y = centerY + Math.cos(angle) * offset;
+    _ref = this.velocityMap.dataAt(x, y, this.width, this.height), velocity = _ref[0], isForeground = _ref[1];
+    if ((!isForeground) && Math.random() > BG_RELEASE_PROBABILITY) {
+      return;
     }
-    this.reset();
-    idealReleaseRate = totalSparks / milliseconds / 60 / 2;
-    console.log("ideal release rate = " + idealReleaseRate);
-    return idealReleaseRate;
+    spark = new Spark(new Point(x, y), velocity, isForeground, Math.max(this.width, this.height));
+    return this.sparks.push(spark);
   };
 
   return ColorSparks;
@@ -207,20 +205,26 @@ ColorSparks = (function() {
 })();
 
 Spark = (function() {
-  function Spark(location, velocity, color) {
+  function Spark(location, velocity, isForeground, canvasWidth) {
     this.location = location;
     this.velocity = velocity;
-    this.color = color;
+    this.update = __bind(this.update, this);
     this.initialLocation = this.location.clone();
     this.forceCounter = 0;
     this.active = true;
-    this.radius = INITIAL_DIAMETER.get() / 2;
+    this.radius = INITIAL_DIAMETER.get() / 2 * canvasWidth;
     this.radiusDecay = RADIUS_DECAY.get();
-    this.darkeningRadius = DARKENING_DIAMETER.get() / 2;
     this.xForceAmplitude = FORCE_AMPLITUDE.get();
     this.xForcePeriod = FORCE_PERIOD.get();
     this.yForceAmplitude = FORCE_AMPLITUDE.get();
     this.yForcePeriod = FORCE_PERIOD.get();
+    if (isForeground) {
+      this.color = randomColor();
+      this.darkeningRadius = DARKENING_DIAMETER.get() / 2 * canvasWidth;
+    } else {
+      this.color = randomGrey();
+      this.darkeningRadius = false;
+    }
   }
 
   Spark.prototype.update = function(ctx) {
@@ -232,7 +236,7 @@ Spark = (function() {
     this.forceCounter++;
     this.velocity.x += Math.sin(Math.PI * 2 * this.forceCounter / this.xForcePeriod) * this.xForceAmplitude;
     this.velocity.y += Math.sin(Math.PI * 2 * this.forceCounter / this.yForcePeriod) * this.yForceAmplitude;
-    if (this.isText) {
+    if (this.darkeningRadius) {
       ctx.beginPath();
       ctx.arc(this.initialLocation.x + random(-1, 1), this.initialLocation.y + random(-1, 1), this.darkeningRadius, 0, Math.PI * 2, false);
       ctx.closePath();
@@ -253,33 +257,44 @@ Spark = (function() {
 
 VelocityMap = (function() {
   function VelocityMap(src) {
+    this.src = src;
+    this.handleImageError = __bind(this.handleImageError, this);
     this.handleImageLoad = __bind(this.handleImageLoad, this);
+    this.loaded = false;
     this.image = new Image();
     this.image.onload = this.handleImageLoad;
-    this.loaded = false;
+    this.image.onerror = this.handleImageError;
+    this.image.src = this.src;
   }
 
   VelocityMap.prototype.handleImageLoad = function() {
-    var imgCanvas, imgCtx, imgHeight, imgWidth;
+    var imgCanvas, imgCtx;
     imgCanvas = document.createElement("canvas");
-    imgCanvas.width = imgWidth = this.image.width;
-    imgCanvas.height = imgHeight = this.image.height;
+    imgCanvas.width = this.imgWidth = this.image.width;
+    imgCanvas.height = this.imgHeight = this.image.height;
     imgCtx = imgCanvas.getContext("2d");
-    imgCtx.drawImage(image, 0, 0);
-    this.imageData = imgCtx.getImageData(x, y, imgCanvas.width, imgCanvas.height);
-    return this.width = imgCanvas.width;
+    imgCtx.drawImage(this.image, 0, 0);
+    this.imageData = imgCtx.getImageData(0, 0, imgCanvas.width, imgCanvas.height).data;
+    return this.loaded = true;
   };
 
-  VelocityMap.prototype.velocityAt = function(x, y) {
-    var offset;
-    offset = y * this.width + x;
-    return new Point((this.imageData[offset] / 128 - 1) * MAX_INITIAL_V, (this.imageData[offset + 1] / 128 - 1) * MAX_INITIAL_V);
+  VelocityMap.prototype.handleImageError = function(event) {
+    return console.error("Image " + this.src + " failed to load", event);
   };
 
-  VelocityMap.prototype.isTextAt = function(x, y) {
-    var offset;
-    offset = y * this.width + x;
-    return this.imageData[offset + 2] > 128;
+  VelocityMap.prototype.dataAt = function(x, y, canvasWidth, canvasHeight) {
+    var isForeground, offset, sampleX, sampleY, scale, velocity, yOffset;
+    scale = this.imgWidth / canvasWidth;
+    yOffset = ((canvasHeight * scale) - this.imgHeight) / 2;
+    sampleX = Math.floor(x * scale);
+    sampleY = Math.floor(y * scale - yOffset);
+    offset = (sampleY * this.imgWidth + sampleX) * 4;
+    if (sampleX < 0 || sampleX > this.imgWidth || sampleY < 0 || sampleY > this.imgHeight) {
+      return [new Point(0, 0), false];
+    }
+    velocity = new Point((this.imageData[offset] / 128 - 1) * MAX_INITIAL_V, (this.imageData[offset + 1] / 128 - 1) * MAX_INITIAL_V);
+    isForeground = this.imageData[offset + 2] > 128;
+    return [velocity, isForeground];
   };
 
   return VelocityMap;
