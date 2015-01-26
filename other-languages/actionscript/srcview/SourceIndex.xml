@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<index>
+	<title>Source of imagine_actionscript</title>
+	<nodes>
+		<node label="src">
+			<node icon="mxmlAppIcon" selected="true" label="Imagine.as" url="source/Imagine.as.html"/>
+			<node icon="imageIcon" label="logo.jpg" url="source/logo.jpg.html"/>
+		</node>
+	</nodes>
+	<zipfile label="Download source (ZIP, 436K)" url="imagine_actionscript.zip">
+	</zipfile>
+	<sdklink label="Download Flex SDK" url="http://www.adobe.com/go/flex4_sdk_download">
+	</sdklink>
+</index>
